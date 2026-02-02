@@ -1,6 +1,7 @@
 # Investment Calculator — Teste Técnico (Jera)
 
-Aplicação fullstack para simulação e comparação de investimentos, construída com foco em clareza de negócio e confiabilidade técnica.
+Aplicação fullstack para simulação e comparação de cenários de investimento
+(Renda Fixa e Renda Variável), com persistência dos resultados e regras financeiras.
 
 ## O que foi entregue
 
