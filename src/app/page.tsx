@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from 'react'
 import { simulateFixedIncome } from '../lib/calculations/fixedIncome'
+import { RV_SCENARIOS } from '../lib/calculations/rvScenarios'
+import { simulateVariableIncome } from '../lib/calculations/variableIncome'
+import { compareRfVsRvs } from '../lib/calculations/compare'
 
 type FormState = {
   name: string
@@ -49,6 +52,33 @@ export default function Home() {
       annualRate: parsed.annualRate,
     })
   }, [submitted, parsed])
+
+  const rvResults = useMemo(() => {
+    if (!result) return null
+
+    const input = {
+      initialAmount: parsed.initialAmount,
+      monthlyContribution: parsed.monthlyContribution,
+      months: parsed.months,
+    }
+
+    return RV_SCENARIOS.map((scenario) => simulateVariableIncome(input, scenario))
+  }, [result, parsed])
+
+  const comparisons = useMemo(() => {
+    if (!result || !rvResults) return null
+
+    return compareRfVsRvs({
+      rfFinalGross: result.finalAmount,
+      rfFinalNet: result.netFinalAmount,
+      rvs: rvResults.map((rv) => ({
+        scenarioId: rv.scenarioId,
+        scenarioLabel: rv.scenarioLabel,
+        finalGross: rv.finalAmount,
+        finalNet: rv.finalAmount, // RV sem impostos por enquanto
+      })),
+    })
+  }, [result, rvResults])
 
   function onChange<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -173,6 +203,52 @@ export default function Home() {
             <div className="text-sm text-muted-foreground">
               Diferença percentual entre cenários (RF vs RV): <strong>{percentDiff}%</strong>{' '}
               <span>(RV será implementada no próximo passo)</span>
+            </div>
+
+              <div className="mt-6 space-y-3">
+              <h3 className="text-base font-medium">Renda Variável (cenários)</h3>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                {rvResults?.map((rv) => (
+                  <div key={rv.scenarioId} className="rounded-md border p-3">
+                    <div className="text-xs text-muted-foreground">
+                      {rv.scenarioId} — {rv.scenarioLabel}
+                    </div>
+                    <div className="mt-1 text-lg font-semibold">{brl(rv.finalAmount)}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Lucro bruto: {brl(rv.grossProfit)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-md border p-3">
+                <div className="text-sm font-medium mb-2">Diferença vs Renda Fixa</div>
+
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                  {comparisons?.map((c) => (
+                    <div key={c.scenarioId} className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">
+                        {c.scenarioId} — {c.scenarioLabel}
+                      </div>
+
+                      <div className="mt-2 text-sm">
+                        <span className="text-xs text-muted-foreground">Bruto:</span>{' '}
+                        <strong>{c.diffGrossPct === null ? '—' : pct(c.diffGrossPct)}</strong>
+                      </div>
+
+                      <div className="mt-1 text-sm">
+                        <span className="text-xs text-muted-foreground">Líquido:</span>{' '}
+                        <strong>{c.diffNetPct === null ? '—' : pct(c.diffNetPct)}</strong>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Observação: neste teste, RV não possui regra de imposto especificada; portanto, RV líquido = RV bruto.
+                </p>
+              </div>
             </div>
           </section>
         )}
