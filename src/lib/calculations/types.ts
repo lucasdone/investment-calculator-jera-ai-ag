@@ -16,4 +16,16 @@ export type FixedIncomeResult = {
   finalAmount: number
   totalContributed: number
   grossProfit: number
+
+  days: number
+  taxes: {
+    iofRate: number
+    iofAmount: number
+    irRate: number
+    irAmount: number
+    netProfit: number
+  }
+  netFinalAmount: number
+
+
 }

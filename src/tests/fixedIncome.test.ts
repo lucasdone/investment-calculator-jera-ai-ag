@@ -38,4 +38,17 @@ describe('simulateFixedIncome', () => {
       simulateFixedIncome({ initialAmount: 1000, months: 0, annualRate: 0.1 })
     ).toThrow()
   })
+
+   it('includes taxes and net final amount', () => {
+    const res = simulateFixedIncome({
+      initialAmount: 1000,
+      monthlyContribution: 0,
+      months: 1,
+      annualRate: 0.12,
+    })
+
+    expect(res.days).toBe(30)
+    expect(res.taxes).toBeDefined()
+    expect(res.netFinalAmount).toBeGreaterThan(0)
+  })
 })

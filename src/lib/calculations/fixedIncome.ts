@@ -1,5 +1,6 @@
 import { annualToMonthlyRate } from './rates'
 import type { FixedIncomeInput, FixedIncomeResult } from './types'
+import { calculateFixedIncomeTaxes } from './taxes'
 
 function assertNonNegative(name: string, value: number) {
   if (!Number.isFinite(value) || value < 0) throw new Error(`${name} must be a non-negative number`)
@@ -28,11 +29,26 @@ export function simulateFixedIncome(input: FixedIncomeInput): FixedIncomeResult 
   const totalContributed = input.initialAmount + monthlyContribution * input.months
   const grossProfit = balance - totalContributed
 
+  const days = input.months * 30 // premissa do teste (meses -> dias)
+  const taxes = calculateFixedIncomeTaxes(grossProfit, days)
+
+  const netFinalAmount = totalContributed + taxes.netProfit
+
   return {
     monthlyRate,
     series,
     finalAmount: balance,
     totalContributed,
     grossProfit,
+
+    days,
+    taxes: {
+      iofRate: taxes.iofRate,
+      iofAmount: taxes.iofAmount,
+      irRate: taxes.irRate,
+      irAmount: taxes.irAmount,
+      netProfit: taxes.netProfit,
+    },
+    netFinalAmount,
   }
 }
