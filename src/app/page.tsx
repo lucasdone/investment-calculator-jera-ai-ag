@@ -5,100 +5,26 @@ import { simulateFixedIncome } from '../lib/calculations/fixedIncome'
 import { RV_SCENARIOS } from '../lib/calculations/rvScenarios'
 import { simulateVariableIncome } from '../lib/calculations/variableIncome'
 import { compareRfVsRvs } from '../lib/calculations/compare'
-
-type FormState = {
-  name: string
-  initialAmount: string
-  monthlyContribution: string
-  months: string
-  annualRate: string // percent input, ex: "12" -> 0.12
-}
+import { SimulationForm } from '../components/SimulationForm'
+import { Results } from '../components/Results'
+import { History } from '../components/History'
 
 export default function Home() {
-  const [form, setForm] = useState<FormState>({
-    name: 'Simulação 1',
-    initialAmount: '1000',
-    monthlyContribution: '100',
-    months: '12',
-    annualRate: '12',
-  })
+  const [fixedResult, setFixedResult] = useState<any>(null)
+  const [variableResults, setVariableResults] = useState<any[] | null>(null)
+  const [comparisons, setComparisons] = useState<any[] | null>(null)
 
-  const [submitted, setSubmitted] = useState(false)
-  const [savedOk, setSavedOk] = useState(false)
   const [saving, setSaving] = useState(false)
-
   const [savedList, setSavedList] = useState<Array<{ id: string; name: string; createdAt: string }>>([])
   const [listLoading, setListLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
 
-  const parsed = useMemo(() => {
-    const initialAmount = Number(form.initialAmount)
-    const monthlyContribution = form.monthlyContribution === '' ? 0 : Number(form.monthlyContribution)
-    const months = Number(form.months)
-    const annualRate = Number(form.annualRate) / 100
-
-    const errors: string[] = []
-    if (!form.name.trim()) errors.push('Nome da simulação é obrigatório.')
-    if (!Number.isFinite(initialAmount) || initialAmount < 0) errors.push('Valor inicial inválido.')
-    if (!Number.isFinite(monthlyContribution) || monthlyContribution < 0) errors.push('Aporte mensal inválido.')
-    if (!Number.isFinite(months) || months <= 0) errors.push('Período (meses) inválido.')
-    if (!Number.isFinite(annualRate) || annualRate < 0) errors.push('Taxa anual inválida.')
-
-    return { initialAmount, monthlyContribution, months, annualRate, errors }
-  }, [form])
-
-  function onChange<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }))
-  }
-
-  // RF (resultado principal)
-  const fixedResult = useMemo(() => {
-    if (!submitted) return null
-    if (parsed.errors.length) return null
-
-    return simulateFixedIncome({
-      initialAmount: parsed.initialAmount,
-      monthlyContribution: parsed.monthlyContribution,
-      months: parsed.months,
-      annualRate: parsed.annualRate,
-    })
-  }, [submitted, parsed])
-
-  // RVs por cenário
-  const variableResults = useMemo(() => {
-    if (!fixedResult) return null
-
-    const input = {
-      initialAmount: parsed.initialAmount,
-      monthlyContribution: parsed.monthlyContribution,
-      months: parsed.months,
-    }
-
-    return RV_SCENARIOS.map((scenario) => simulateVariableIncome(input, scenario))
-  }, [fixedResult, parsed])
-
-  // Comparações RF vs RV (bruto e líquido)
-  const comparisons = useMemo(() => {
-    if (!fixedResult || !variableResults) return null
-
-    return compareRfVsRvs({
-      rfFinalGross: fixedResult.finalAmount,
-      rfFinalNet: fixedResult.netFinalAmount,
-      rvs: variableResults.map((rv) => ({
-        scenarioId: rv.scenarioId,
-        scenarioLabel: rv.scenarioLabel,
-        finalGross: rv.finalAmount,
-        finalNet: rv.finalAmount, // RV sem impostos por enquanto
-      })),
-    })
-  }, [fixedResult, variableResults])
-
-  async function saveSimulation(payload: any) {
+  async function saveSimulation(name: string, payload: any) {
     const res = await fetch('/api/simulations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: form.name,
+        name,
         payload,
       }),
     })
@@ -130,29 +56,21 @@ export default function Home() {
 
   useEffect(() => {
     loadSimulations()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
-
-    setSubmitted(true)
-    setSavedOk(false)
-
-    if (parsed.errors.length) return
-
-    // Recalcula no submit para garantir que salvamos um snapshot consistente
+  async function handleFormSubmit(formData: any) {
+    // 1. Calculate
     const fixed = simulateFixedIncome({
-      initialAmount: parsed.initialAmount,
-      monthlyContribution: parsed.monthlyContribution,
-      months: parsed.months,
-      annualRate: parsed.annualRate,
+      initialAmount: Number(formData.initialAmount),
+      monthlyContribution: formData.monthlyContribution === '' ? 0 : Number(formData.monthlyContribution),
+      months: Number(formData.months),
+      annualRate: Number(formData.annualRate) / 100,
     })
 
     const rvInput = {
-      initialAmount: parsed.initialAmount,
-      monthlyContribution: parsed.monthlyContribution,
-      months: parsed.months,
+      initialAmount: Number(formData.initialAmount),
+      monthlyContribution: formData.monthlyContribution === '' ? 0 : Number(formData.monthlyContribution),
+      months: Number(formData.months),
     }
 
     const variable = RV_SCENARIOS.map((scenario) => simulateVariableIncome(rvInput, scenario))
@@ -168,13 +86,19 @@ export default function Home() {
       })),
     })
 
+    // 2. Set State for View
+    setFixedResult(fixed)
+    setVariableResults(variable)
+    setComparisons(comparisonsLocal)
+
+    // 3. Prepare Payload
     const payload = {
       inputs: {
-        name: form.name,
-        initialAmount: parsed.initialAmount,
-        monthlyContribution: parsed.monthlyContribution,
-        months: parsed.months,
-        rfAnnualRate: parsed.annualRate,
+        name: formData.name,
+        initialAmount: Number(formData.initialAmount),
+        monthlyContribution: Number(formData.monthlyContribution),
+        months: Number(formData.months),
+        rfAnnualRate: Number(formData.annualRate) / 100,
         rvScenarios: RV_SCENARIOS,
       },
       outputs: {
@@ -189,236 +113,77 @@ export default function Home() {
       createdAtClient: new Date().toISOString(),
     }
 
+    // 4. Save
     try {
       setSaving(true)
-      await saveSimulation(payload)
-      setSavedOk(true)
+      await saveSimulation(formData.name, payload)
       await loadSimulations()
     } catch (err) {
       console.error('Save failed:', err)
-      setSavedOk(false)
+      // Optional: Toast error
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <main className="min-h-screen p-6">
-      <div className="mx-auto max-w-3xl space-y-6">
-        <header className="space-y-1">
-          <h1 className="text-2xl font-semibold">Calculadora de Investimentos</h1>
-          <p className="text-sm text-muted-foreground">
-            RF com impostos (IOF → IR) + cenários RV (RV1–RV3) e comparação vs RF.
-          </p>
+    <main className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-800 via-black to-black p-4 md:p-8">
+      <div className="mx-auto max-w-6xl space-y-8">
+
+        {/* Header */}
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-zinc-900/50">
+          <div className="space-y-1">
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white">
+              Invest<span className="text-indigo-500">Calc</span>
+            </h1>
+            <p className="text-sm text-zinc-500 max-w-md">
+              Simule cenários de renda fixa e compare com estratégias de renda variável potencializadas por IA.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-medium text-zinc-400">
+              v1.0.0
+            </div>
+          </div>
         </header>
 
-        <section className="rounded-lg border p-4">
-          <h2 className="mb-3 text-lg font-medium">Nova simulação</h2>
-
-          <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <label className="space-y-1 md:col-span-2">
-              <span className="text-sm">Nome</span>
-              <input
-                className="w-full rounded-md border px-3 py-2"
-                value={form.name}
-                onChange={(e) => onChange('name', e.target.value)}
-                placeholder="Ex: Reserva de emergência"
-              />
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-sm">Valor inicial (R$)</span>
-              <input
-                className="w-full rounded-md border px-3 py-2"
-                inputMode="decimal"
-                value={form.initialAmount}
-                onChange={(e) => onChange('initialAmount', e.target.value)}
-              />
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-sm">Aporte mensal (R$)</span>
-              <input
-                className="w-full rounded-md border px-3 py-2"
-                inputMode="decimal"
-                value={form.monthlyContribution}
-                onChange={(e) => onChange('monthlyContribution', e.target.value)}
-                placeholder="0"
-              />
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-sm">Período (meses)</span>
-              <input
-                className="w-full rounded-md border px-3 py-2"
-                inputMode="numeric"
-                value={form.months}
-                onChange={(e) => onChange('months', e.target.value)}
-              />
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-sm">Taxa anual (RF) % a.a</span>
-              <input
-                className="w-full rounded-md border px-3 py-2"
-                inputMode="decimal"
-                value={form.annualRate}
-                onChange={(e) => onChange('annualRate', e.target.value)}
-              />
-            </label>
-
-            <div className="md:col-span-2 flex items-center gap-3">
-              <button
-                type="submit"
-                disabled={saving}
-                className="rounded-md bg-black px-4 py-2 text-white hover:opacity-90 disabled:opacity-60"
-              >
-                {saving ? 'Salvando...' : 'Simular e salvar'}
-              </button>
-
-              {savedOk && <span className="text-sm text-green-600">Salvo!</span>}
-
-              {submitted && parsed.errors.length > 0 && (
-                <div className="text-sm text-red-600">
-                  {parsed.errors.map((err) => (
-                    <div key={err}>• {err}</div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </form>
-        </section>
-
-        <section className="rounded-lg border p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium">Simulações salvas</h2>
-
-            <button
-              type="button"
-              onClick={loadSimulations}
-              className="rounded-md border px-3 py-2 text-sm hover:bg-white/5 disabled:opacity-60"
-              disabled={listLoading}
-            >
-              {listLoading ? 'Atualizando...' : 'Atualizar'}
-            </button>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Left Column: Form & History */}
+          <div className="lg:col-span-4 space-y-6">
+            <SimulationForm onSubmit={handleFormSubmit} isSaving={saving} />
+            <History
+              savedList={savedList}
+              loadSimulations={loadSimulations}
+              listLoading={listLoading}
+              listError={listError}
+            />
           </div>
 
-          {listError && <p className="mt-2 text-sm text-red-600">{listError}</p>}
-
-          <div className="mt-3 space-y-2">
-            {savedList.length === 0 && !listLoading && (
-              <p className="text-sm text-muted-foreground">Nenhuma simulação salva ainda.</p>
-            )}
-
-            {savedList.map((s) => (
-              <div key={s.id} className="rounded-md border p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-medium">{s.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {new Date(s.createdAt).toLocaleString('pt-BR')}
-                    </div>
-                  </div>
-
-                  <div className="text-xs text-muted-foreground">{s.id.slice(-6)}</div>
+          {/* Right Column: Visualization */}
+          <div className="lg:col-span-8">
+            {fixedResult ? (
+              <Results
+                fixedResult={fixedResult}
+                variableResults={variableResults!}
+                comparisons={comparisons!}
+              />
+            ) : (
+              <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-center p-8 glass rounded-xl border-dashed border-zinc-800">
+                <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mb-4">
+                  <svg className="w-8 h-8 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  </svg>
                 </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-
-        {fixedResult && (
-          <section className="rounded-lg border p-4 space-y-4">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-lg font-medium">Resultado — {form.name}</h2>
-              <p className="text-sm text-muted-foreground">
-                Prazo: {fixedResult.days} dias (premissa: meses × 30)
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <Metric label="Total aportado" value={brl(fixedResult.totalContributed)} />
-              <Metric label="Valor final bruto (RF)" value={brl(fixedResult.finalAmount)} />
-              <Metric label="Lucro bruto (RF)" value={brl(fixedResult.grossProfit)} />
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-              <Metric label={`IOF (${pct(fixedResult.taxes.iofRate)})`} value={brl(fixedResult.taxes.iofAmount)} />
-              <Metric label={`IR (${pct(fixedResult.taxes.irRate)})`} value={brl(fixedResult.taxes.irAmount)} />
-              <Metric label="Lucro líquido (RF)" value={brl(fixedResult.taxes.netProfit)} />
-              <Metric label="Valor final líquido (RF)" value={brl(fixedResult.netFinalAmount)} />
-            </div>
-
-            <div className="mt-6 space-y-3">
-              <h3 className="text-base font-medium">Renda Variável (cenários)</h3>
-
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                {variableResults?.map((rv) => (
-                  <div key={rv.scenarioId} className="rounded-md border p-3">
-                    <div className="text-xs text-muted-foreground">
-                      {rv.scenarioId} — {rv.scenarioLabel}
-                    </div>
-                    <div className="mt-1 text-lg font-semibold">{brl(rv.finalAmount)}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      Lucro bruto: {brl(rv.grossProfit)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="rounded-md border p-3">
-                <div className="text-sm font-medium mb-2">Diferença vs Renda Fixa</div>
-
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                  {comparisons?.map((c) => (
-                    <div key={c.scenarioId} className="rounded-md border p-3">
-                      <div className="text-xs text-muted-foreground">
-                        {c.scenarioId} — {c.scenarioLabel}
-                      </div>
-
-                      <div className="mt-2 text-sm">
-                        <span className="text-xs text-muted-foreground">Bruto:</span>{' '}
-                        <strong>{c.diffGrossPct === null ? '—' : pct(c.diffGrossPct)}</strong>
-                      </div>
-
-                      <div className="mt-1 text-sm">
-                        <span className="text-xs text-muted-foreground">Líquido:</span>{' '}
-                        <strong>{c.diffNetPct === null ? '—' : pct(c.diffNetPct)}</strong>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <p className="mt-3 text-xs text-muted-foreground">
-                  Observação: neste teste, RV não possui regra de imposto especificada; portanto, RV líquido = RV bruto.
+                <h3 className="text-lg font-medium text-white">Pronto para simular?</h3>
+                <p className="text-sm text-zinc-500 max-w-xs mt-2">
+                  Preencha os parâmetros à esquerda para gerar uma análise comparativa detalhada.
                 </p>
               </div>
-            </div>
-          </section>
-        )}
+            )}
+          </div>
+        </div>
+
       </div>
     </main>
   )
-}
-
-function Metric(props: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border p-3">
-      <div className="text-xs text-muted-foreground">{props.label}</div>
-      <div className="mt-1 text-lg font-semibold">{props.value}</div>
-    </div>
-  )
-}
-
-function brl(value: number) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
-}
-
-function pct(value: number) {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'percent',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value)
 }
